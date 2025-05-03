@@ -1,8 +1,11 @@
 'use client';
+
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { toast } from 'sonner';
+import { signIn } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -16,16 +19,24 @@ import {
 import { Form, FormControl, FormField, FormItem, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
-import { AuthService } from '@/shared/lib/auth';
-import { AuthParams } from '@/shared/types/auth';
+import { LoginParams } from '@/shared/types/auth';
 
 const FormSchema = z.object({
   email: z.string().email('Введите корректный email'),
-  password: z.string().min(6, { message: 'Пароль должен содержать минимум 6 символов' }),
+  password: z
+    .string()
+    .min(6, {
+      message: 'Пароль должен содержать минимум 6 символов',
+    })
+    .max(4096, {
+      message: 'Пароль слишком длинный',
+    }),
 });
 
 const LoginForm = () => {
-  const form = useForm<AuthParams>({
+  const router = useRouter();
+
+  const form = useForm<LoginParams>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
       email: '',
@@ -33,21 +44,27 @@ const LoginForm = () => {
     },
   });
 
-  function onSubmit(values: AuthParams) {
-    AuthService.login({ ...values }).catch((error) => {
-      if (error.code === 'auth/invalid-credential') {
-        form.setError('email', {
-          type: 'manual',
-          message: 'Неверный email или пароль',
-        });
-        form.setError('password', {
-          type: 'manual',
-          message: 'Неверный email или пароль',
-        });
-      } else {
+  async function onSubmit(values: LoginParams) {
+    await signIn('credentials', { ...values, redirect: false })
+      .then((res) => {
+        if (res?.error === 'CredentialsSignin') {
+          form.setError('email', {
+            type: 'manual',
+            message: 'Неверный email или пароль',
+          });
+          form.setError('password', {
+            type: 'manual',
+            message: 'Неверный email или пароль',
+          });
+        }
+        if (res?.ok) {
+          router.push('/');
+        }
+      })
+      .catch((error) => {
+        console.error('Ошибка входа:', error);
         toast.error('Ошибка входа. Попробуйте еще раз.');
-      }
-    });
+      });
   }
 
   return (
@@ -77,7 +94,7 @@ const LoginForm = () => {
               render={({ field }) => (
                 <FormItem>
                   <FormControl>
-                    <Input required type="password" {...field} />
+                    <Input required type="password" placeholder="Пароль" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -94,8 +111,13 @@ const LoginForm = () => {
 
             <Separator />
 
-            <Button variant="outline" className="w-full" type="button">
-              Войти с помощью Google
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => signIn('google')}
+            >
+              Войти через Google
             </Button>
           </CardFooter>
         </form>
